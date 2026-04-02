@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --wood-bg: #F5F1E9;
+  --wood-card: #FDFCFB;
+  --wood-text: #22333B;
+  --wood-accent: #A68A64;
+  --wood-dark: #5E503F;
+  --wood-300: #C6AC8F;
+}
+
+body {
+  background-color: var(--wood-bg);
+  color: var(--wood-text);
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.wood-card {
+  background-color: var(--wood-card);
+  border: 1px solid #EAE0D5;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.wood-input {
+  background-color: var(--wood-card);
+  border: 2px solid #EAE0D5;
+  transition: all 0.3s ease;
+}
+
+.wood-input:focus {
+  border-color: var(--wood-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(166, 138, 100, 0.1);
+}
+
+.wood-button {
+  background-color: var(--wood-accent);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.wood-button:hover {
+  background-color: #8D7352;
+  transform: translateY(-1px);
+}
+
+.wood-button:active {
+  transform: translateY(0);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--wood-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wood-300);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wood-accent);
+}
