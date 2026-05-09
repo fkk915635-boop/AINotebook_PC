@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8089
 
 spring:
   application:
@@ -19,7 +19,7 @@ spring:
         - id: note-service
           uri: lb://ainotebook-note-service
           predicates:
-            - Path=/api/note/**
+            - Path=/api/note/**, /api/blog/**, /api/follow/**, /api/user/**, /api/ai/**, /api/chat/**
           filters:
             - StripPrefix=1
       globalcors:

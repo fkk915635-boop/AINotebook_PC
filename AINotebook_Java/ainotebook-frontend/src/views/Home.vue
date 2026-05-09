@@ -25,6 +25,12 @@ function logout() {
       </div>
 
       <div class="flex items-center justify-center gap-3">
+        <router-link
+          to="/community"
+          class="px-6 py-2 rounded-xl bg-wood-accent text-white font-bold hover:bg-[#8D7352] transition-all shadow-md active:scale-95"
+        >
+          探索社区
+        </router-link>
         <button
           class="px-4 py-2 rounded-xl border border-wood-200 bg-white/60 text-wood-500 hover:bg-white transition-colors"
           @click="logout"

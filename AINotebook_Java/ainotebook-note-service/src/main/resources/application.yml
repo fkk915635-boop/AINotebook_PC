@@ -12,6 +12,11 @@ spring:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
+  redis:
+    host: 192.168.88.101
+    port: 6379
+    password: ${REDIS_PASSWORD:123456}
+    database: 0
 
 mybatis-plus:
   configuration:
@@ -28,3 +33,6 @@ eureka:
 ainotebook:
   jwt:
     secret: ainotebook-dev-secret
+  ollama:
+    baseUrl: http://localhost:11434
+    model: deepseek-r1:7b

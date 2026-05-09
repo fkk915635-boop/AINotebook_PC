@@ -1,0 +1,10 @@
+package com.ainotebook.note.mapper;
+
+import com.ainotebook.note.entity.UserProfile;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface UserProfileMapper extends BaseMapper<UserProfile> {
+}
+

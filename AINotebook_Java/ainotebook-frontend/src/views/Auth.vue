@@ -1,14 +1,14 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http from '../services/http'
 import { setToken } from '../services/auth'
+import * as THREE from 'three'
 
 const router = useRouter()
 const route = useRoute()
 
-const mode = ref('login')
-const form = ref({ username: '', password: '', confirm: '' })
+const form = ref({ phone: '', code: '' })
 const msg = ref({ text: '', type: '' })
 
 const pull = ref(0)
@@ -21,25 +21,22 @@ const spring = ref(0)
 let springRaf = 0
 let springV = 0
 
+// Three.js variables
 const canvasRef = ref(null)
-const size = ref({ w: 0, h: 0, dpr: 1 })
-let raf = 0
-let t0 = 0
 const reducedMotion = ref(false)
+let raf = 0
+let scene, camera, renderer, particles
+
+const countdown = ref(0)
+let timer = null
 
 const canSubmit = computed(() => {
-  if (!form.value.username.trim() || !form.value.password) return false
-  if (mode.value === 'register') return form.value.password === form.value.confirm && form.value.password.length >= 6
-  return true
+  return form.value.phone.trim().length === 11 && form.value.code.trim().length >= 4
 })
 
-const passwordMismatch = computed(() => mode.value === 'register' && form.value.confirm && form.value.password !== form.value.confirm)
-
 const idBase = `auth-${Math.random().toString(36).slice(2, 9)}`
-const usernameId = `${idBase}-username`
-const passwordId = `${idBase}-password`
-const confirmId = `${idBase}-confirm`
-const confirmHelpId = `${idBase}-confirm-help`
+const phoneId = `${idBase}-phone`
+const codeId = `${idBase}-code`
 const toastId = `${idBase}-toast`
 
 const CHAIN_BASE = 38
@@ -52,6 +49,24 @@ function showMsg(text, type = 'info') {
   msg.value = { text, type }
   window.clearTimeout(showMsg._t)
   showMsg._t = window.setTimeout(() => (msg.value = { text: '', type: '' }), 2600)
+}
+
+async function sendCode() {
+  if (form.value.phone.length !== 11) {
+    showMsg('请输入正确的手机号', 'error')
+    return
+  }
+  try {
+    await http.post('/auth/send-code', { phone: form.value.phone })
+    showMsg('验证码已发送 (测试环境验证码: 123456)', 'success')
+    countdown.value = 60
+    timer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0) clearInterval(timer)
+    }, 1000)
+  } catch (e) {
+    showMsg(e?.response?.data?.message || '发送失败', 'error')
+  }
 }
 
 function clamp(n, a, b) {
@@ -139,16 +154,7 @@ async function submit() {
   if (!canSubmit.value) return
   loading.value = true
   try {
-    if (mode.value === 'register') {
-      await http.post('/auth/register', { username: form.value.username.trim(), password: form.value.password })
-      mode.value = 'login'
-      form.value.confirm = ''
-      showMsg('注册成功，请登录', 'success')
-      loading.value = false
-      return
-    }
-
-    const res = await http.post('/auth/login', { username: form.value.username.trim(), password: form.value.password })
+    const res = await http.post('/auth/login', { phone: form.value.phone.trim(), code: form.value.code.trim() })
     const token = res?.data?.token || res?.data
     if (!token) throw new Error('登录失败')
     setToken(token)
@@ -161,80 +167,103 @@ async function submit() {
   }
 }
 
-function toggleMode() {
-  mode.value = mode.value === 'login' ? 'register' : 'login'
-  form.value.password = ''
-  form.value.confirm = ''
-}
-
 function resize() {
-  const el = canvasRef.value
-  if (!el) return
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
-  const rect = el.getBoundingClientRect()
-  size.value = { w: rect.width, h: rect.height, dpr }
-  el.width = Math.floor(rect.width * dpr)
-  el.height = Math.floor(rect.height * dpr)
+  if (!camera || !renderer) return
+  const w = window.innerWidth
+  const h = window.innerHeight
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+  renderer.setSize(w, h)
 }
 
-function draw(ts) {
+function initThree() {
   const el = canvasRef.value
   if (!el) return
-  const ctx = el.getContext('2d')
-  if (!ctx) return
-  if (!t0) t0 = ts
-  const t = (ts - t0) / 1000
-  const { w, h, dpr } = size.value
-  if (!w || !h) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, w, h)
 
-  const g = ctx.createRadialGradient(w * 0.55, h * 0.35, 10, w * 0.55, h * 0.35, Math.max(w, h))
-  g.addColorStop(0, '#0b1b2a')
-  g.addColorStop(0.5, '#07121d')
-  g.addColorStop(1, '#050b12')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, w, h)
+  const w = window.innerWidth
+  const h = window.innerHeight
 
-  const swirl = (x, y, k) => {
-    const cx = w * 0.62
-    const cy = h * 0.38
-    const dx = x - cx
-    const dy = y - cy
-    const r = Math.sqrt(dx * dx + dy * dy) + 1e-6
-    const a = Math.atan2(dy, dx) + k * (1 / r) * 220
-    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]
+  scene = new THREE.Scene()
+  scene.fog = new THREE.FogExp2(0x050b12, 0.001)
+
+  camera = new THREE.PerspectiveCamera(75, w / h, 1, 2000)
+  camera.position.z = 1000
+
+  renderer = new THREE.WebGLRenderer({ canvas: el, alpha: true, antialias: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setSize(w, h)
+  renderer.setClearColor(0x050b12, 1)
+
+  // 粒子系统
+  const geometry = new THREE.BufferGeometry()
+  const particlesCount = 3000
+  const positions = new Float32Array(particlesCount * 3)
+  const colors = new Float32Array(particlesCount * 3)
+
+  const color = new THREE.Color()
+
+  for (let i = 0; i < positions.length; i += 3) {
+    // 球面分布
+    const r = 800 + Math.random() * 800
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+
+    positions[i] = r * Math.sin(phi) * Math.cos(theta)
+    positions[i + 1] = r * Math.sin(phi) * Math.sin(theta)
+    positions[i + 2] = r * Math.cos(phi)
+
+    // 星空色 (偏蓝/紫/金)
+    const hue = 0.55 + Math.random() * 0.15 // 198-252 degree
+    const lightness = 0.5 + Math.random() * 0.5
+    color.setHSL(hue, 0.8, lightness)
+
+    colors[i] = color.r
+    colors[i + 1] = color.g
+    colors[i + 2] = color.b
   }
 
-  const n = Math.floor((w * h) / 12000)
-  for (let i = 0; i < n; i++) {
-    const seed = (i * 99991) % 104729
-    const rx = (seed % 997) / 997
-    const ry = ((seed * 7) % 991) / 991
-    const px = rx * w
-    const py = ry * h
-    const [sx, sy] = swirl(px, py, Math.sin(t * 0.55) * 0.8)
-    const tw = (Math.sin(t * 0.8 + i) + 1) * 0.5
-    const r = 0.6 + tw * 1.4
-    const a = 0.14 + tw * 0.26
-    const hue = 205 + (i % 7) * 5
-    ctx.fillStyle = `hsla(${hue}, 85%, ${70 + tw * 10}%, ${a})`
-    ctx.beginPath()
-    ctx.arc(sx, sy, r, 0, Math.PI * 2)
-    ctx.fill()
-  }
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
 
-  const glowX = w * 0.28
-  const glowY = h * 0.38
-  const power = active.value ? 1 : 0
-  const cone = ctx.createRadialGradient(glowX, glowY, 20, glowX, glowY, Math.max(w, h) * 0.7)
-  cone.addColorStop(0, `rgba(166,138,100,${0.22 * power})`)
-  cone.addColorStop(0.35, `rgba(166,138,100,${0.10 * power})`)
-  cone.addColorStop(1, 'rgba(166,138,100,0)')
-  ctx.fillStyle = cone
-  ctx.fillRect(0, 0, w, h)
+  // 使用简单的圆形材质或者默认点材质
+  const material = new THREE.PointsMaterial({
+    size: 4,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.8,
+    sizeAttenuation: true,
+    blending: THREE.AdditiveBlending
+  })
 
+  particles = new THREE.Points(geometry, material)
+  scene.add(particles)
+
+  // 添加一点环境光和点光源（为后续 3D 模型做准备）
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+  scene.add(ambientLight)
+
+  const pointLight = new THREE.PointLight(0xffdcb4, 1, 1000)
+  pointLight.position.set(0, 0, 200)
+  scene.add(pointLight)
+}
+
+function draw() {
   if (!reducedMotion.value) raf = requestAnimationFrame(draw)
+  
+  if (particles) {
+    const time = Date.now() * 0.00005
+    // 缓慢旋转整个粒子系统
+    particles.rotation.y = time * 0.5
+    particles.rotation.x = time * 0.2
+    
+    // 如果台灯开启，稍微改变粒子的颜色亮度或运动速度
+    const targetScale = active.value ? 1.2 : 1.0
+    particles.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.05)
+  }
+
+  if (renderer && scene && camera) {
+    renderer.render(scene, camera)
+  }
 }
 
 function onKeydown(e) {
@@ -243,7 +272,7 @@ function onKeydown(e) {
 
 onMounted(() => {
   reducedMotion.value = !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  resize()
+  initThree()
   window.addEventListener('resize', resize)
   window.addEventListener('keydown', onKeydown)
   raf = requestAnimationFrame(draw)
@@ -253,12 +282,16 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
   window.removeEventListener('keydown', onKeydown)
   cancelAnimationFrame(raf)
+  if (renderer) {
+    renderer.dispose()
+  }
+  if (timer) clearInterval(timer)
 })
 
 watch(active, async (v) => {
   await nextTick()
   if (v) {
-    const el = document.getElementById(usernameId)
+    const el = document.getElementById(phoneId)
     if (el && typeof el.focus === 'function') el.focus()
   } else {
     const h = handleRef.value
@@ -323,66 +356,49 @@ watch(active, async (v) => {
             <button class="panel-close" type="button" aria-label="关闭登录面板" @click="toggleLamp"></button>
             <div class="panel-title">
               <div class="badge">AINotebook</div>
-              <h2 class="title">{{ mode === 'login' ? '欢迎回来' : '创建账号' }}</h2>
-              <p class="subtitle">{{ mode === 'login' ? '点亮小灯，开始记录' : '先注册，再把灵感存进原木空间' }}</p>
+              <h2 class="title">欢迎回来</h2>
+              <p class="subtitle">输入手机号验证即可登录或注册</p>
             </div>
 
             <form class="form" @submit.prevent="submit" :aria-describedby="msg.text ? toastId : undefined">
               <label class="field">
-                <span class="label">账号</span>
+                <span class="label">手机号</span>
                 <input
-                  :id="usernameId"
-                  v-model="form.username"
+                  :id="phoneId"
+                  v-model="form.phone"
                   class="input"
-                  name="username"
-                  autocomplete="username"
-                  placeholder="请输入账号"
+                  name="phone"
+                  type="tel"
+                  autocomplete="tel"
+                  placeholder="请输入手机号"
+                  maxlength="11"
                   required
                 />
               </label>
 
               <label class="field">
-                <span class="label">密码</span>
-                <input
-                  :id="passwordId"
-                  v-model="form.password"
-                  class="input"
-                  name="password"
-                  type="password"
-                  :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-                  placeholder="请输入密码"
-                  minlength="6"
-                  required
-                />
-              </label>
-
-              <label v-if="mode === 'register'" class="field">
-                <span class="label">确认密码</span>
-                <input
-                  :id="confirmId"
-                  v-model="form.confirm"
-                  class="input"
-                  name="confirmPassword"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="再次输入密码"
-                  minlength="6"
-                  required
-                  :aria-invalid="passwordMismatch ? 'true' : 'false'"
-                  :aria-describedby="confirmHelpId"
-                />
-                <span :id="confirmHelpId" class="help" :class="{ on: passwordMismatch }">
-                  {{ passwordMismatch ? '两次输入的密码不一致' : '' }}
-                </span>
+                <span class="label">验证码</span>
+                <div class="code-input-wrap">
+                  <input
+                    :id="codeId"
+                    v-model="form.code"
+                    class="input code-input"
+                    name="code"
+                    type="text"
+                    autocomplete="one-time-code"
+                    placeholder="请输入验证码"
+                    maxlength="6"
+                    required
+                  />
+                  <button type="button" class="btn-send-code" @click="sendCode" :disabled="countdown > 0 || form.phone.length !== 11">
+                    {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
+                  </button>
+                </div>
               </label>
 
               <button class="primary" type="submit" :disabled="!canSubmit || loading">
-                <span v-if="!loading">{{ mode === 'login' ? '登录' : '注册' }}</span>
+                <span v-if="!loading">登录 / 注册</span>
                 <span v-else class="dots"><i></i><i></i><i></i></span>
-              </button>
-
-              <button class="ghost" type="button" @click="toggleMode">
-                {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
               </button>
             </form>
 
@@ -827,6 +843,39 @@ watch(active, async (v) => {
   background: rgba(15, 25, 34, 0.95);
 }
 
+.code-input-wrap {
+  display: flex;
+  gap: 10px;
+}
+
+.code-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-send-code {
+  width: 110px;
+  height: 48px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.btn-send-code:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(182, 138, 86, 0.4);
+  color: #fff;
+}
+
+.btn-send-code:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .help {
   min-height: 14px;
   font-size: 12px;
@@ -849,19 +898,28 @@ watch(active, async (v) => {
   font-weight: 500;
   letter-spacing: 1px;
   cursor: pointer;
-  transition: filter 200ms ease, transform 100ms ease;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  transition: filter 200ms ease, transform 100ms ease, box-shadow 200ms ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 2px 4px rgba(255, 255, 255, 0.2);
+  transform-style: preserve-3d;
 }
 
 .primary:disabled {
   opacity: 0.55;
   filter: grayscale(0.2);
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .primary:not(:disabled):hover {
-  transform: translateY(-1px);
-  filter: brightness(1.05);
+  transform: translateY(-2px) scale(1.02);
+  filter: brightness(1.1);
+  box-shadow: 0 8px 16px rgba(182, 138, 86, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+.primary:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4), inset 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .ghost {

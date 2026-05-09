@@ -12,8 +12,9 @@ import java.time.LocalDateTime;
 public class User {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String username;
-    private String passwordHash;
+    private String phone;
+    private String nickname;
+    private String avatar;
+    private String bio;
     private LocalDateTime createdAt;
 }
-

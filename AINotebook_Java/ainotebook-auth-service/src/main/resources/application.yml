@@ -9,6 +9,10 @@ spring:
     username: root
     password: 123456
     driver-class-name: com.mysql.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
 
 mybatis-plus:
   configuration:
@@ -23,4 +27,3 @@ ainotebook:
   jwt:
     secret: ainotebook-dev-secret
     ttlMillis: 604800000
-

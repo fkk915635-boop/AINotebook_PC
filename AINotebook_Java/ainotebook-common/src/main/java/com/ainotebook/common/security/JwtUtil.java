@@ -6,12 +6,24 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
+import org.springframework.stereotype.Component;
+
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Date;
 
+@Component
 public class JwtUtil {
+
+    public Long getUserId(String token, String secret) {
+        try {
+            Claims claims = parseClaims(token, secret);
+            return Long.parseLong(claims.getSubject());
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     public static String issueToken(long userId, String username, String secret, long ttlMillis) {
         long now = System.currentTimeMillis();

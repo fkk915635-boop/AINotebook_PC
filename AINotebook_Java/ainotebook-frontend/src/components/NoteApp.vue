@@ -11,6 +11,24 @@ const showAiModal = ref(false)
 const apiKey = ref('')
 const message = ref({ text: '', type: '' })
 
+const isSharing = ref(false)
+
+const shareToCommunity = async (note) => {
+  if (isSharing.value) return
+  isSharing.value = true
+  try {
+    await http.post(`/blog/publish?apiKey=${encodeURIComponent(apiKey.value || '')}`, {
+      title: '来自我的思维笔记',
+      content: note.content
+    })
+    showMsg('已成功分享到社区！', 'success')
+  } catch (error) {
+    showMsg('分享失败，请稍后重试', 'error')
+  } finally {
+    isSharing.value = false
+  }
+}
+
 function parseDate(v) {
   if (!v) return null
   if (typeof v === 'string') {
@@ -47,7 +65,7 @@ const saveNote = async () => {
   try {
     await http.post('/note/save', { content: inputNote.value })
     inputNote.value = ''
-    fetchNotes()
+    await fetchNotes() // 确保等待获取最新列表完成
     showMsg('保存成功', 'success')
   } catch (error) {
     showMsg('保存失败', 'error')
@@ -75,7 +93,19 @@ const analyzeNotes = async () => {
     aiResult.value = response.data
     showAiModal.value = true
   } catch (error) {
-    showMsg('AI 分析失败', 'error')
+    const status = error?.response?.status
+    if (status === 404 || status === 502 || status === 503) {
+      try {
+        await new Promise((r) => setTimeout(r, 600))
+        const response = await http.post(`/note/analyze?apiKey=${encodeURIComponent(apiKey.value || '')}`)
+        aiResult.value = response.data
+        showAiModal.value = true
+      } catch (e2) {
+        showMsg('AI 分析失败', 'error')
+      }
+    } else {
+      showMsg('AI 分析失败', 'error')
+    }
   } finally {
     isAnalyzing.value = false
   }
@@ -184,12 +214,22 @@ onMounted(() => {
               <span class="text-xs font-bold text-wood-300 bg-wood-50 px-3 py-1 rounded-full uppercase tracking-wider">
                 {{ formatDateTime(note.createdAt) }}
               </span>
-              <button 
-                @click="deleteNote(note.id)"
-                class="opacity-0 group-hover:opacity-100 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
-              >
-                <Trash2 :size="18" />
-              </button>
+              <div class="flex items-center gap-1">
+                <button 
+                  @click="shareToCommunity(note)"
+                  class="opacity-0 group-hover:opacity-100 p-2 text-wood-300 hover:text-wood-accent hover:bg-wood-50 rounded-full transition-all"
+                  title="分享到社区"
+                >
+                  <Share2 :size="18" />
+                </button>
+                <button 
+                  @click="deleteNote(note.id)"
+                  class="opacity-0 group-hover:opacity-100 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
+                  title="删除笔记"
+                >
+                  <Trash2 :size="18" />
+                </button>
+              </div>
             </div>
             <p class="text-wood-500 leading-relaxed text-lg whitespace-pre-wrap">{{ note.content }}</p>
           </div>

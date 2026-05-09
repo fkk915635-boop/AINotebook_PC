@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.ainotebook.note", "com.ainotebook.common"})
 @EnableEurekaClient
 @MapperScan("com.ainotebook.note.mapper")
 public class NoteApplication {
